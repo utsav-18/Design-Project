@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <input>
+    <net-file value="simple.net.xml"/>
+    <route-files value="simple.rou.xml"/>
+  </input>
+
+  <time>
+    <step-length value="0.1"/>
+    <begin value="0"/>
+    <end value="1000"/> <!-- extended so sim can run to the full track -->
+  </time>
+
+  <report>
+    <log value="sumo.log"/>
+  </report>
+</configuration>

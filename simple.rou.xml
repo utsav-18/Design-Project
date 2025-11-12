@@ -1,0 +1,11 @@
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+
+    <vType id="leaderType" maxSpeed="5.00" accel="1.0" decel="2.0" sigma="0.5" length="4.5" />
+    <vType id="car" maxSpeed="13.89" accel="3.0" decel="6.0" sigma="0.5" length="4.5" />
+
+    <route id="r1" edges="A0B0" />
+
+    <vehicle id="leader" type="leaderType" route="r1" depart="0" color="1,0,0" />
+    <vehicle id="follower" type="car" route="r1" depart="4" color="0,0,1" />
+
+</routes>
