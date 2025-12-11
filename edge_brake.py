@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-edge_brake.py — leader stops mid-track for a while then resumes, follower follows safely.
-Ends when leader reaches end of final edge (or when both vehicles are gone).
+edge_brake_multi.py — leader stops mid-track then resumes; every other vehicle follows the vehicle directly ahead.
+Writes per-step logs to CSV.
+Based on your original edge_brake.py logic (kept behavior names & tuning).
 """
 
 import traci
@@ -15,13 +16,12 @@ SUMO_BINARY = "sumo-gui"
 SUMO_CONFIG = "simple.sumocfg"
 
 LEADER_ID = "leader"
-FOLLOWER_ID = "follower"
 
 # Behavior positions (meters along lane)
-SLOW_ZONE_START = 200.0     # where leader begins to slow
-STOP_POSITION = 200.0       # where leader will stop (mid-track)
-STOP_DURATION = 80         # how long leader stays stopped (seconds)
-FAST_ZONE_START = 700.0     # if road long enough, where leader speeds up
+SLOW_ZONE_START = 200.0
+STOP_POSITION = 200.0
+STOP_DURATION = 80          # seconds the leader stays stopped
+FAST_ZONE_START = 700.0
 
 # Speeds (m/s)
 NORMAL_SPEED = 8.0
@@ -30,33 +30,33 @@ FAST_SPEED = 20.0
 
 BRAKE_TIME = 2.0
 
-# Safety model for follower
+# Safety model for followers
 BASE_SAFE_DIST = 5.0
 REACTION_TIME = 1.0
 DECEL = 4.5
 
 # Simulation control
 MAX_STEPS = 20000
-LOG_CSV = "edge_log.csv"
+LOG_CSV = "edge_log_multi.csv"
+STEP_WARMUP = 5
 # ==============================================
 
 
-def calc_safe_dist(v_f):
+def calc_safe_dist(v):
     """Simple safe distance: base + reaction + braking distance."""
-    return BASE_SAFE_DIST + v_f * REACTION_TIME + (v_f ** 2) / (2 * DECEL)
+    return BASE_SAFE_DIST + v * REACTION_TIME + (v ** 2) / (2 * DECEL)
 
 
 def get_lane_pos(vehicle_id):
     try:
         return traci.vehicle.getLanePosition(vehicle_id)
-    except traci.TraCIException:
+    except traci.exceptions.TraCIException:
         return None
 
 
 def get_lane_length_for_vehicle(vehicle_id):
-    """Return length of the lane the vehicle is currently on (or None)."""
     try:
-        lane_id = traci.vehicle.getLaneID(vehicle_id)  # like "A0B0_0"
+        lane_id = traci.vehicle.getLaneID(vehicle_id)
         if lane_id:
             return traci.lane.getLength(lane_id)
     except Exception:
@@ -64,28 +64,26 @@ def get_lane_length_for_vehicle(vehicle_id):
     return None
 
 
-def get_distance(leader_id, follower_id):
-    """Prefer same-lane longitudinal distance; otherwise euclidean distance."""
+def get_distance_same_lane(a_id, b_id):
+    """
+    distance from a to b when on same lane: pos_a - pos_b (a ahead)
+    returns positive if a ahead of b.
+    """
     try:
-        lid = traci.vehicle.getLaneID(leader_id)
-        fid = traci.vehicle.getLaneID(follower_id)
-        if lid and fid and lid == fid:
-            # leader ahead lanepos - follower lanepos
-            return max(0.0, traci.vehicle.getLanePosition(leader_id) - traci.vehicle.getLanePosition(follower_id))
-    except traci.TraCIException:
-        pass
-    # fallback: euclidean distance
-    try:
-        pL = traci.vehicle.getPosition(leader_id)
-        pF = traci.vehicle.getPosition(follower_id)
-        return math.hypot(pL[0] - pF[0], pL[1] - pF[1])
+        lane_a = traci.vehicle.getLaneID(a_id)
+        lane_b = traci.vehicle.getLaneID(b_id)
+        if lane_a and lane_b and lane_a == lane_b:
+            pos_a = traci.vehicle.getLanePosition(a_id)
+            pos_b = traci.vehicle.getLanePosition(b_id)
+            return max(0.0, pos_a - pos_b)
     except Exception:
-        return float("inf")
+        pass
+    return float("inf")
 
 
-def short_log(step, t, posL, dist, vL, vF, safe, action):
-    posL_str = f"{posL:6.1f}" if posL is not None else "   N/A"
-    print(f"Step {step:04d} t={t:6.2f}s | Lpos:{posL_str} m | Dist:{dist:6.2f} m | L:{vL:4.1f} m/s | F:{vF:4.1f} m/s | Safe:{safe:5.2f} m | {action}")
+def short_log(step, t, vid, pos, speed, leader_id, gap, safe, action):
+    pos_str = f"{pos:6.1f}" if pos is not None else "   N/A"
+    print(f"Step {step:04d} t={t:6.2f}s | {vid:12s} pos:{pos_str} m | spd:{speed:4.1f} m/s | lead:{leader_id:12s} gap:{gap:6.2f} safe:{safe:5.2f} | {action}")
 
 
 def run():
@@ -96,14 +94,14 @@ def run():
     # Open CSV
     with open(LOG_CSV, mode="w", newline="") as csvfile:
         writer = csv.writer(csvfile)
+        # header
         writer.writerow([
-            "step", "time_s", "vehicle_id_leader", "leader_lane_pos_m",
-            "vehicle_id_follower", "follower_lane_pos_m",
-            "leader_speed_mps", "follower_speed_mps", "gap_m", "safe_dist_m", "action"
+            "step", "time_s", "vehicle_id", "lane_pos_m", "speed_mps",
+            "leader_of_this_vehicle", "gap_to_leader_m", "safe_dist_m", "action"
         ])
 
         # warm-up few steps
-        for _ in range(5):
+        for _ in range(STEP_WARMUP):
             traci.simulationStep()
             step += 1
 
@@ -113,63 +111,36 @@ def run():
             ids = traci.vehicle.getIDList()
 
             leader_present = LEADER_ID in ids
-            follower_present = FOLLOWER_ID in ids
 
-            # If both vehicles gone and SUMO expects none, finish
-            if (not leader_present and not follower_present) and traci.simulation.getMinExpectedNumber() == 0:
+            # If nothing expected & no vehicles present, finish
+            if (not ids) and traci.simulation.getMinExpectedNumber() == 0:
                 print("No vehicles present and none expected. Ending.")
                 break
 
-            # If leader finished the track (reached end of its lane), and follower is gone or behind, finish.
-            if not leader_present:
-                # leader already finished
-                if not follower_present and traci.simulation.getMinExpectedNumber() == 0:
-                    break
-            else:
-                # check if leader reached end of its current lane
-                lane_len = get_lane_length_for_vehicle(LEADER_ID)
-                posL = get_lane_pos(LEADER_ID)
-                if lane_len is not None and posL is not None and posL >= max(0.0, lane_len - 0.5):
-                    # leader reached end — wait until follower leaves (or short timeout) then stop
-                    print(f"Leader reached end of lane at t={t:.2f}s (pos {posL:.2f}/{lane_len:.2f}). Waiting for follower to clear.")
-                    # run a few more steps to let follower finish
-                    extra_wait = 0
-                    while extra_wait < 20:
-                        traci.simulationStep()
-                        extra_wait += 1
-                    break
+            # Leader state machine
+            if leader_present:
+                try:
+                    posL = get_lane_pos(LEADER_ID)
+                    vL = traci.vehicle.getSpeed(LEADER_ID)
+                except Exception:
+                    posL = None
+                    vL = 0.0
 
-            action = "None"
-
-            if leader_present and follower_present:
-                vL = traci.vehicle.getSpeed(LEADER_ID)
-                vF = traci.vehicle.getSpeed(FOLLOWER_ID)
-                posL = get_lane_pos(LEADER_ID)
-                posF = get_lane_pos(FOLLOWER_ID)
-                gap = get_distance(LEADER_ID, FOLLOWER_ID)
-                safe = calc_safe_dist(vF)
-
-                # Leader state machine (stop mid-track then resume)
                 if posL is not None:
                     if leader_state == "normal" and posL >= SLOW_ZONE_START and posL < STOP_POSITION:
                         traci.vehicle.slowDown(LEADER_ID, SLOW_SPEED, BRAKE_TIME)
                         leader_state = "slowing"
-                        action = "Leader: slowing"
                     elif leader_state in ("normal", "slowing") and posL >= STOP_POSITION:
-                        # stop at STOP_POSITION
                         traci.vehicle.slowDown(LEADER_ID, 0.0, BRAKE_TIME)
                         leader_state = "stopped"
                         stop_timer = 0
-                        action = "Leader: stopped"
                     elif leader_state == "stopped":
                         if stop_timer < STOP_DURATION:
                             traci.vehicle.setSpeed(LEADER_ID, 0.0)
                             stop_timer += 1
-                            action = f"Leader: stopped ({stop_timer}/{STOP_DURATION})"
                         else:
                             traci.vehicle.slowDown(LEADER_ID, NORMAL_SPEED, BRAKE_TIME)
                             leader_state = "resuming"
-                            action = "Leader: resuming"
                     elif leader_state == "resuming" and posL >= FAST_ZONE_START:
                         try:
                             traci.vehicle.setMaxSpeed(LEADER_ID, FAST_SPEED)
@@ -177,59 +148,121 @@ def run():
                             pass
                         traci.vehicle.slowDown(LEADER_ID, FAST_SPEED, BRAKE_TIME)
                         leader_state = "fast"
-                        action = "Leader: fast"
-                    elif leader_state == "fast":
-                        action = "Leader: fast"
+                # else leader not yet in lane or lost
+
+            # For every vehicle currently present, determine the vehicle ahead on same lane
+            # Build a list of (vehicle_id, lanePos) for vehicles that have lane position
+            veh_positions = []
+            for vid in ids:
+                pos = get_lane_pos(vid)
+                if pos is not None:
+                    # lane position is distance from lane start; larger = further along
+                    veh_positions.append((vid, pos))
+            # sort descending so first is the lead-most vehicle
+            veh_positions.sort(key=lambda x: x[1], reverse=True)
+
+            # Build a mapping: for each vehicle, who is directly ahead (None if none)
+            ahead_map = {}
+            for i, (vid, pos) in enumerate(veh_positions):
+                if i == 0:
+                    ahead_map[vid] = None
+                else:
+                    ahead_map[vid] = veh_positions[i - 1][0]  # vehicle ahead
+
+            # Now apply follower control for every vehicle except the true leader (LEADER_ID handles its own FSM)
+            for vid, pos in veh_positions:
+                try:
+                    v = traci.vehicle.getSpeed(vid)
+                except Exception:
+                    v = 0.0
+
+                leader_of_vid = ahead_map.get(vid)
+                action = "cruise"
+
+                if vid == LEADER_ID:
+                    # log leader state for visibility
+                    action = f"leader_state:{leader_state}"
+                    gap = ""
+                    safe = calc_safe_dist(v)
+                    writer.writerow([step, f"{t:.3f}", vid, f"{pos:.3f}", f"{v:.3f}", "", "", f"{safe:.3f}", action])
+                    short_log(step, t, vid, pos, v, "", 0.0, safe, action)
+                    continue
+
+                # If there is a vehicle ahead, compute gap and control relative to that vehicle
+                if leader_of_vid is not None:
+                    gap = get_distance_between(leader_of_vid, vid)
+                    try:
+                        v_lead = traci.vehicle.getSpeed(leader_of_vid)
+                    except Exception:
+                        v_lead = 0.0
+
+                    safe = calc_safe_dist(v)
+
+                    # Simple reactive controller:
+                    # - if leader ahead is much slower than us -> brake to leader speed
+                    # - if gap < safe -> slow proportionally
+                    if v_lead + 2.0 < v and v_lead < 5.0:
+                        traci.vehicle.slowDown(vid, 0.0, BRAKE_TIME)
+                        action = f"brake (lead slow:{leader_of_vid})"
+                    elif gap < safe:
+                        # reduce speed to a fraction of current speed (tunable)
+                        new_speed = max(0.0, v * 0.35)
+                        traci.vehicle.slowDown(vid, new_speed, BRAKE_TIME)
+                        action = f"brake (too close to {leader_of_vid})"
                     else:
-                        # no state change, cruising
-                        if action == "None":
-                            action = "Leader: cruise"
+                        traci.vehicle.setSpeed(vid, -1)  # revert to vehicle's desired speed
+                        action = "follow"
 
+                    # log
+                    writer.writerow([step, f"{t:.3f}", vid, f"{pos:.3f}", f"{v:.3f}", leader_of_vid, f"{gap:.3f}", f"{safe:.3f}", action])
+                    short_log(step, t, vid, pos, v, leader_of_vid, gap, safe, action)
                 else:
-                    posL = float("nan")
-                    posF = float("nan")
-                    vL = 0.0
-                    vF = 0.0
-                    gap = float("inf")
-                    safe = calc_safe_dist(0.0)
+                    # no vehicle ahead -> free cruise
+                    traci.vehicle.setSpeed(vid, -1)
+                    gap = ""
+                    safe = calc_safe_dist(v)
+                    writer.writerow([step, f"{t:.3f}", vid, f"{pos:.3f}", f"{v:.3f}", "", "", f"{safe:.3f}", "free"])
+                    short_log(step, t, vid, pos, v, "None", 0.0, safe, "free")
 
-                # Follower logic (reactive)
-                if vL + 2.0 < vF and vL < 5.0:
-                    traci.vehicle.slowDown(FOLLOWER_ID, 0.0, BRAKE_TIME)
-                    action = action + " | Follower: brake (leader slower)"
-                elif gap < safe:
-                    traci.vehicle.slowDown(FOLLOWER_ID, max(0.0, vF * 0.35), BRAKE_TIME)
-                    action = action + " | Follower: brake (too close)"
-                else:
-                    traci.vehicle.setSpeed(FOLLOWER_ID, -1)
-                    action = action + " | Follower: follow"
-
-                # log
-                writer.writerow([
-                    step, f"{t:.3f}", LEADER_ID, f"{posL:.3f}",
-                    FOLLOWER_ID, f"{posF:.3f}",
-                    f"{vL:.3f}", f"{vF:.3f}", "" if gap == float("inf") else f"{gap:.3f}",
-                    f"{safe:.3f}", action
-                ])
-
-                short_log(step, t, posL, gap, vL, vF, safe, action)
-
-            else:
-                # if one is missing, log who is present
-                present = ids if ids else []
-                # write a minimal row for visibility
-                writer.writerow([step, f"{t:.3f}", LEADER_ID if leader_present else "", f"{get_lane_pos(LEADER_ID) if leader_present else ''}",
-                                 FOLLOWER_ID if follower_present else "", f"{get_lane_pos(FOLLOWER_ID) if follower_present else ''}",
-                                 "", "", "", "", f"Vehicles present: {present}"])
-                if ids:
-                    print(f"Step {step:04d} t={t:.2f}s | Vehicles present: {', '.join(ids)}")
-                else:
-                    print(f"Step {step:04d} t={t:.2f}s | No vehicles on network")
+            # check leader reached end-of-lane condition (stop simulation after brief wait)
+            if leader_present:
+                lane_len = get_lane_length_for_vehicle(LEADER_ID)
+                posL = get_lane_pos(LEADER_ID)
+                if lane_len is not None and posL is not None and posL >= max(0.0, lane_len - 0.5):
+                    print(f"Leader reached end of lane at t={t:.2f}s (pos {posL:.2f}/{lane_len:.2f}). Waiting a few steps then ending.")
+                    # run a few more steps to let followers finish
+                    for _ in range(20):
+                        traci.simulationStep()
+                        step += 1
+                    break
 
             step += 1
 
     traci.close()
     print(f"\nSimulation finished. Log saved to {LOG_CSV}")
+
+
+def get_distance_between(a_id, b_id):
+    """
+    Return distance along lane from a (ahead) to b (behind) when both on same lane.
+    Falls back to euclidean distance if lane info missing.
+    """
+    try:
+        lane_a = traci.vehicle.getLaneID(a_id)
+        lane_b = traci.vehicle.getLaneID(b_id)
+        if lane_a and lane_b and lane_a == lane_b:
+            pos_a = traci.vehicle.getLanePosition(a_id)
+            pos_b = traci.vehicle.getLanePosition(b_id)
+            return max(0.0, pos_a - pos_b)
+    except Exception:
+        pass
+    # fallback euclidean
+    try:
+        pA = traci.vehicle.getPosition(a_id)
+        pB = traci.vehicle.getPosition(b_id)
+        return math.hypot(pA[0] - pB[0], pA[1] - pB[1])
+    except Exception:
+        return float("inf")
 
 
 if __name__ == "__main__":

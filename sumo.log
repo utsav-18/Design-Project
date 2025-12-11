@@ -1,16 +1,15 @@
-***Starting server on port 62470 ***
-Loading net-file from 'simple.net.xml' ... done (4ms).
+***Starting server on port 49272 ***
+Loading net-file from 'simple.net.xml' ... done (3ms).
 Loading done.
 Simulation started with time: 0.00.
-Simulation ended at time: 114.30
-Reason: TraCI requested termination.
+Simulation ended at time: 95.60
 Performance: 
- Duration: 81.17s
- TraCI-Duration: 5.90s
- Real time factor: 1.40819
- UPS: 27.375320
+ Duration: 15.44s
+ TraCI-Duration: 11.99s
+ Real time factor: 6.19011
+ UPS: 288.979539
 Vehicles: 
- Inserted: 2
- Running: 0
+ Inserted: 5
+ Running: 5
  Waiting: 0
 
