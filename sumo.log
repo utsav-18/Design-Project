@@ -1,15 +1,20 @@
-***Starting server on port 49272 ***
-Loading net-file from 'simple.net.xml' ... done (3ms).
+***Starting server on port 51318 ***
+Loading net-file from 'simple_intersection.net.xml' ... done (22ms).
+Loading additional-files from 'tls.add.xml' ... done (1ms).
 Loading done.
 Simulation started with time: 0.00.
-Simulation ended at time: 95.60
+Warning: Route file should be sorted by departure time, ignoring 'main_flow_w_e'!
+Warning: Route file should be sorted by departure time, ignoring 'follower_test_01'!
+Warning: Route file should be sorted by departure time, ignoring 'follower_test_02'!
+Simulation ended at time: 183.00
+Reason: TraCI requested termination.
 Performance: 
- Duration: 15.44s
- TraCI-Duration: 11.99s
- Real time factor: 6.19011
- UPS: 288.979539
+ Duration: 38.77s
+ TraCI-Duration: 2.65s
+ Real time factor: 4.71966
+ UPS: 189.044205
 Vehicles: 
- Inserted: 5
- Running: 5
- Waiting: 0
+ Inserted: 71 (Loaded: 134)
+ Running: 65
+ Waiting: 63
 

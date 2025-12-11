@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes>
+  <vType id="car" accel="3.0" decel="6.0" sigma="0.5" length="4.5" maxSpeed="13.89"/>
+  <vType id="leaderType" accel="1.0" decel="4.5" sigma="0.5" length="4.5" maxSpeed="8.0"/>
+
+  <!-- Routes across intersection -->
+  <route id="main_w_e" edges="W_C C_E"/>
+  <route id="main_e_w" edges="E_C C_W"/>
+  <route id="side_s_n" edges="S_C C_N"/>
+  <route id="side_n_s" edges="N_C C_S"/>
+
+  <!-- leader on main road west->east -->
+  <vehicle id="leader" type="leaderType" route="main_w_e" depart="2.0" color="1,0,0"/>
+
+  <!-- Dense continuous flows (use either period or number+begin; here we use period) -->
+  <!-- Main west->east: every 2s from t=0..1000 -> ~500 vehicles -->
+  <flow id="main_flow_w_e" type="car" route="main_w_e" begin="0" end="1000" departPos="random" departSpeed="max" period="2"/>
+
+  <!-- Main east->west: every 3s from t=5..1000 -> ~332 vehicles -->
+  <flow id="main_flow_e_w" type="car" route="main_e_w" begin="5" end="1000" departPos="random" departSpeed="max" period="3"/>
+
+  <!-- Side road flows: s->n every 4s, n->s every 6s -->
+  <flow id="side_flow_s_n" type="car" route="side_s_n" begin="10" end="1000" departPos="random" departSpeed="max" period="4"/>
+  <flow id="side_flow_n_s" type="car" route="side_n_s" begin="15" end="1000" departPos="random" departSpeed="max" period="6"/>
+
+  <!-- A few explicit turning / test vehicles (optional) -->
+  <vehicle id="turn01" type="car" route="main_e_w" depart="20.0" color="0,0.6,1"/>
+  <vehicle id="follower_test_01" type="car" route="main_w_e" depart="4.0" color="0,0.8,0.3"/>
+  <vehicle id="follower_test_02" type="car" route="main_w_e" depart="6.0" color="0.2,0.6,0.9"/>
+</routes>

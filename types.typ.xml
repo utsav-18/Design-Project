@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<types>
+  <vType id="car" accel="3.0" decel="6.0" sigma="0.5" length="4.5" maxSpeed="13.89"/>
+  <vType id="leaderType" accel="1.0" decel="4.5" sigma="0.5" length="4.5" maxSpeed="8.0" color="1,0,0"/>
+</types>

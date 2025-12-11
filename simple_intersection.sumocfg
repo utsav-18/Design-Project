@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <input>
+    <net-file value="simple_intersection.net.xml"/>
+    <route-files value="simple_intersection.rou.xml"/>
+    <additional-files value="tls.add.xml"/>
+  </input>
+  <time>
+    <begin value="0"/>
+    <end value="1000"/>
+  </time>
+  <report>
+    <log value="sumo.log"/>
+  </report>
+</configuration>

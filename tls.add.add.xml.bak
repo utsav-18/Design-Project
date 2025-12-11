@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<additional>
+  <!-- tls for junction id="C" with 5 signal groups.
+       Phase strings are length 5 and ensure every index gets green at least once.
+  -->
+  <tlLogic id="C" type="static" programID="main" offset="0" currentPhase="0">
+    <!-- Phase 1: main road green (groups 0 & 1 and also index 4) -->
+    <phase duration="20" state="GGrrG"/>
+    <!-- Phase 1 yellow -->
+    <phase duration="4"  state="yyrry"/>
+    <!-- Phase 2: side road green (groups 2 & 3) -->
+    <phase duration="18" state="rrGGr"/>
+    <!-- Phase 2 yellow -->
+    <phase duration="4"  state="rryyr"/>
+  </tlLogic>
+</additional>
